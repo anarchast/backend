@@ -1,7 +1,12 @@
-package com.example.excelexport;
+// Hier ist wieder die Version des `ExportService` mit Guava Cache, um Speicherplatz mit TTL zu begrenzen.
 
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
+package com.example.excelexport.service;
+
+import com.example.excelexport.model.Customer;
+import com.example.excelexport.model.Order;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -10,17 +15,19 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayOutputStream;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class ExportService {
 
-    private final Map<String, String> jobStatus = new ConcurrentHashMap<>();
-    private final Map<String, byte[]> jobData = new ConcurrentHashMap<>();
+    private final Cache<String, String> jobStatus = CacheBuilder.newBuilder()
+            .expireAfterWrite(10, TimeUnit.MINUTES)
+            .build();
+
+    private final Cache<String, byte[]> jobData = CacheBuilder.newBuilder()
+            .expireAfterWrite(10, TimeUnit.MINUTES)
+            .build();
 
     public String startExport() {
         String jobId = UUID.randomUUID().toString();
@@ -30,11 +37,12 @@ public class ExportService {
     }
 
     public String getStatus(String id) {
-        return jobStatus.getOrDefault(id, "UNKNOWN");
+        String status = jobStatus.getIfPresent(id);
+        return (status != null) ? status : "UNKNOWN";
     }
 
     public ResponseEntity<byte[]> downloadFile(String id) {
-        byte[] data = jobData.get(id);
+        byte[] data = jobData.getIfPresent(id);
         if (data == null) return ResponseEntity.notFound().build();
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=export.xlsx")
@@ -99,3 +107,14 @@ public class ExportService {
         return List.of(c1, c2);
     }
 }
+
+// 🔹 Vergiss nicht, Guava in deiner `pom.xml` hinzuzufügen:
+/*
+<dependency>
+  <groupId>com.google.guava</groupId>
+  <artifactId>guava</artifactId>
+  <version>33.0.0-jre</version>
+</dependency>
+*/
+
+// Diese Version nutzt wieder Guava-Caches mit 10 Minuten TTL statt unendlicher Maps.
